@@ -60,6 +60,11 @@ const ContractUpload = ({ onAnalysisComplete }) => {
     }
   };
 
+  // Fixed: Add function to trigger file input
+  const triggerFileInput = () => {
+    document.getElementById('file-upload').click();
+  };
+
   const uploadContract = async () => {
     if (!file) {
       toast.error("Please select a file first");
@@ -112,9 +117,10 @@ const ContractUpload = ({ onAnalysisComplete }) => {
       </CardHeader>
       <CardContent>
         <div
-          className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-500 transition-colors"
+          className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-500 transition-colors cursor-pointer"
           onDragOver={handleDragOver}
           onDrop={handleDrop}
+          onClick={triggerFileInput}
         >
           {file ? (
             <div className="space-y-4">
@@ -126,7 +132,13 @@ const ContractUpload = ({ onAnalysisComplete }) => {
                 </div>
               </div>
               {!isUploading && (
-                <Button onClick={uploadContract} className="w-full">
+                <Button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    uploadContract();
+                  }} 
+                  className="w-full"
+                >
                   Analyze Contract
                 </Button>
               )}
@@ -147,11 +159,16 @@ const ContractUpload = ({ onAnalysisComplete }) => {
                 className="hidden"
                 id="file-upload"
               />
-              <label htmlFor="file-upload">
-                <Button variant="outline" className="cursor-pointer">
-                  Choose File
-                </Button>
-              </label>
+              <Button 
+                variant="outline" 
+                className="cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  triggerFileInput();
+                }}
+              >
+                Choose File
+              </Button>
             </div>
           )}
         </div>
@@ -247,7 +264,62 @@ const ClauseCard = ({ clause, index }) => {
   );
 };
 
+// Fixed: Add modal component for clause details in table view
+const ClauseModal = ({ clause, index, isOpen, onClose }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <h2 className="text-xl font-semibold">Clause {index + 1}</h2>
+              <RiskBadge level={clause.risk_level} />
+            </div>
+            <Button variant="ghost" onClick={onClose} className="text-gray-500 hover:text-gray-700">
+              ✕
+            </Button>
+          </div>
+          
+          <div className="space-y-4">
+            <div>
+              <h3 className="font-semibold text-gray-700 mb-2">Issue Detected</h3>
+              <p className="text-sm font-medium text-red-600">{clause.issue_detected}</p>
+            </div>
+
+            <div>
+              <h3 className="font-semibold text-gray-700 mb-2">Original Clause</h3>
+              <div className="bg-red-50 border border-red-200 rounded-md p-3">
+                <p className="text-sm">{clause.clause_text}</p>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="font-semibold text-gray-700 mb-2">Risk Explanation</h3>
+              <div className="bg-amber-50 border border-amber-200 rounded-md p-3">
+                <p className="text-sm">{clause.explanation}</p>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="font-semibold text-gray-700 mb-2">Suggested Alternative</h3>
+              <div className="bg-green-50 border border-green-200 rounded-md p-3">
+                <p className="text-sm">{clause.suggested_alternative}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const AnalysisResults = ({ analysis }) => {
+  // Fixed: Add state for modal
+  const [selectedClause, setSelectedClause] = useState(null);
+  const [modalIndex, setModalIndex] = useState(null);
+
   if (!analysis) return null;
 
   const riskCounts = analysis.analysis_results.reduce((acc, clause) => {
@@ -257,6 +329,17 @@ const AnalysisResults = ({ analysis }) => {
   }, {});
 
   const totalIssues = analysis.analysis_results.length;
+
+  // Fixed: Add function to handle eye icon click
+  const handleViewClause = (clause, index) => {
+    setSelectedClause(clause);
+    setModalIndex(index);
+  };
+
+  const closeModal = () => {
+    setSelectedClause(null);
+    setModalIndex(null);
+  };
 
   return (
     <div className="space-y-6">
@@ -370,7 +453,13 @@ const AnalysisResults = ({ analysis }) => {
                             <p className="truncate text-sm">{clause.clause_text}</p>
                           </TableCell>
                           <TableCell>
-                            <Button variant="ghost" size="sm">
+                            {/* Fixed: Add click handler to eye icon */}
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => handleViewClause(clause, index)}
+                              className="hover:bg-gray-100"
+                            >
                               <Eye className="h-4 w-4" />
                             </Button>
                           </TableCell>
@@ -384,6 +473,14 @@ const AnalysisResults = ({ analysis }) => {
           )}
         </CardContent>
       </Card>
+
+      {/* Fixed: Add modal for clause details */}
+      <ClauseModal 
+        clause={selectedClause}
+        index={modalIndex}
+        isOpen={selectedClause !== null}
+        onClose={closeModal}
+      />
     </div>
   );
 };
@@ -392,6 +489,7 @@ const Home = () => {
   const [currentAnalysis, setCurrentAnalysis] = useState(null);
   const [analysisHistory, setAnalysisHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     fetchAnalysisHistory();
@@ -416,6 +514,251 @@ const Home = () => {
 
   const handleStartNew = () => {
     setCurrentAnalysis(null);
+  };
+
+  // Export to PDF functionality
+  const exportToPDF = async () => {
+    if (!currentAnalysis) return;
+    
+    setIsExporting(true);
+    try {
+      // Create HTML content for PDF
+      const htmlContent = generateReportHTML(currentAnalysis);
+      
+      // Create a new window for printing
+      const printWindow = window.open('', '_blank');
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+      
+      // Wait for content to load then print
+      printWindow.onload = () => {
+        printWindow.print();
+        printWindow.close();
+      };
+      
+      toast.success("PDF export initiated - check your browser's print dialog");
+    } catch (error) {
+      console.error('PDF export error:', error);
+      toast.error("Failed to export PDF");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // Export to Word functionality
+  const exportToWord = () => {
+    if (!currentAnalysis) return;
+    
+    setIsExporting(true);
+    try {
+      const wordContent = generateWordContent(currentAnalysis);
+      
+      // Create blob and download
+      const blob = new Blob([wordContent], {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      });
+      
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `contract-analysis-${currentAnalysis.filename.replace('.pdf', '')}.doc`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast.success("Word document downloaded successfully");
+    } catch (error) {
+      console.error('Word export error:', error);
+      toast.error("Failed to export Word document");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // Generate HTML content for PDF export
+  const generateReportHTML = (analysis) => {
+    const riskCounts = analysis.analysis_results.reduce((acc, clause) => {
+      const level = clause.risk_level.toLowerCase();
+      acc[level] = (acc[level] || 0) + 1;
+      return acc;
+    }, {});
+
+    return `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Contract Analysis Report - ${analysis.filename}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+            .header { text-align: center; margin-bottom: 40px; border-bottom: 2px solid #3b82f6; padding-bottom: 20px; }
+            .header h1 { color: #1f2937; margin-bottom: 10px; }
+            .header p { color: #6b7280; }
+            .summary { display: flex; justify-content: space-around; margin: 30px 0; }
+            .summary-item { text-align: center; padding: 20px; background: #f9fafb; border-radius: 8px; margin: 0 10px; }
+            .summary-item h3 { margin: 0; font-size: 24px; }
+            .summary-item p { margin: 5px 0 0 0; color: #6b7280; font-size: 14px; }
+            .high-risk { color: #dc2626; }
+            .medium-risk { color: #d97706; }
+            .low-risk { color: #2563eb; }
+            .clause { margin: 30px 0; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px; page-break-inside: avoid; }
+            .clause-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+            .clause-title { font-weight: bold; font-size: 18px; }
+            .risk-badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+            .risk-high { background: #fef2f2; color: #dc2626; }
+            .risk-medium { background: #fef3c7; color: #d97706; }
+            .risk-low { background: #eff6ff; color: #2563eb; }
+            .clause-section { margin: 15px 0; }
+            .clause-section h4 { margin-bottom: 8px; font-size: 14px; color: #374151; }
+            .original-clause { background: #fef2f2; border: 1px solid #fecaca; padding: 12px; border-radius: 6px; }
+            .explanation { background: #fef3c7; border: 1px solid #fde68a; padding: 12px; border-radius: 6px; }
+            .suggestion { background: #f0f9ff; border: 1px solid #bae6fd; padding: 12px; border-radius: 6px; }
+            .footer { margin-top: 40px; text-align: center; color: #6b7280; font-size: 12px; border-top: 1px solid #e5e7eb; padding-top: 20px; }
+            @media print {
+              body { margin: 20px; }
+              .clause { page-break-inside: avoid; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Contract Analysis Report</h1>
+            <p><strong>File:</strong> ${analysis.filename}</p>
+            <p><strong>Processed:</strong> ${new Date(analysis.processed_at).toLocaleDateString()} at ${new Date(analysis.processed_at).toLocaleTimeString()}</p>
+          </div>
+
+          <div class="summary">
+            <div class="summary-item">
+              <h3>${analysis.analysis_results.length}</h3>
+              <p>Total Issues</p>
+            </div>
+            <div class="summary-item">
+              <h3 class="high-risk">${riskCounts.high || 0}</h3>
+              <p>High Risk</p>
+            </div>
+            <div class="summary-item">
+              <h3 class="medium-risk">${riskCounts.medium || 0}</h3>
+              <p>Medium Risk</p>
+            </div>
+            <div class="summary-item">
+              <h3 class="low-risk">${riskCounts.low || 0}</h3>
+              <p>Low Risk</p>
+            </div>
+          </div>
+
+          <h2>Detailed Analysis</h2>
+          ${analysis.analysis_results.map((clause, index) => `
+            <div class="clause">
+              <div class="clause-header">
+                <div class="clause-title">Clause ${index + 1}: ${clause.issue_detected}</div>
+                <span class="risk-badge risk-${clause.risk_level.toLowerCase()}">${clause.risk_level.toUpperCase()} RISK</span>
+              </div>
+              
+              <div class="clause-section">
+                <h4>Original Clause:</h4>
+                <div class="original-clause">${clause.clause_text}</div>
+              </div>
+              
+              <div class="clause-section">
+                <h4>Risk Explanation:</h4>
+                <div class="explanation">${clause.explanation}</div>
+              </div>
+              
+              <div class="clause-section">
+                <h4>Suggested Alternative:</h4>
+                <div class="suggestion">${clause.suggested_alternative}</div>
+              </div>
+            </div>
+          `).join('')}
+
+          <div class="footer">
+            <p>Generated by Contract Clause Checker | ${new Date().toLocaleDateString()}</p>
+          </div>
+        </body>
+      </html>
+    `;
+  };
+
+  // Generate Word document content
+  const generateWordContent = (analysis) => {
+    const riskCounts = analysis.analysis_results.reduce((acc, clause) => {
+      const level = clause.risk_level.toLowerCase();
+      acc[level] = (acc[level] || 0) + 1;
+      return acc;
+    }, {});
+
+    return `
+      <html xmlns:v="urn:schemas-microsoft-com:vml"
+            xmlns:o="urn:schemas-microsoft-com:office:office"
+            xmlns:w="urn:schemas-microsoft-com:office:word"
+            xmlns:m="http://schemas.microsoft.com/office/2004/12/omml"
+            xmlns="http://www.w3.org/TR/REC-html40">
+        <head>
+          <meta charset="utf-8">
+          <title>Contract Analysis Report</title>
+          <!--[if gte mso 9]>
+          <xml>
+            <w:WordDocument>
+              <w:View>Print</w:View>
+              <w:Zoom>90</w:Zoom>
+              <w:DoNotPromptForConvert/>
+              <w:DoNotShowInsertionsAndDeletions/>
+            </w:WordDocument>
+          </xml>
+          <![endif]-->
+          <style>
+            body { font-family: 'Times New Roman', serif; font-size: 12pt; line-height: 1.5; }
+            h1 { font-size: 18pt; font-weight: bold; text-align: center; color: #1f2937; }
+            h2 { font-size: 16pt; font-weight: bold; color: #1f2937; margin-top: 24pt; }
+            h3 { font-size: 14pt; font-weight: bold; color: #374151; }
+            h4 { font-size: 12pt; font-weight: bold; color: #4b5563; }
+            .header { text-align: center; margin-bottom: 24pt; }
+            .summary { margin: 18pt 0; }
+            .clause { margin: 18pt 0; padding: 12pt; border: 1pt solid #e5e7eb; }
+            .risk-high { color: #dc2626; font-weight: bold; }
+            .risk-medium { color: #d97706; font-weight: bold; }
+            .risk-low { color: #2563eb; font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>CONTRACT ANALYSIS REPORT</h1>
+            <p><strong>File:</strong> ${analysis.filename}</p>
+            <p><strong>Processed:</strong> ${new Date(analysis.processed_at).toLocaleDateString()} at ${new Date(analysis.processed_at).toLocaleTimeString()}</p>
+          </div>
+
+          <div class="summary">
+            <h2>Executive Summary</h2>
+            <p><strong>Total Issues Found:</strong> ${analysis.analysis_results.length}</p>
+            <p><strong>High Risk Issues:</strong> ${riskCounts.high || 0}</p>
+            <p><strong>Medium Risk Issues:</strong> ${riskCounts.medium || 0}</p>
+            <p><strong>Low Risk Issues:</strong> ${riskCounts.low || 0}</p>
+          </div>
+
+          <h2>Detailed Analysis</h2>
+          ${analysis.analysis_results.map((clause, index) => `
+            <div class="clause">
+              <h3>Clause ${index + 1}: ${clause.issue_detected}</h3>
+              <p><strong>Risk Level:</strong> <span class="risk-${clause.risk_level.toLowerCase()}">${clause.risk_level.toUpperCase()}</span></p>
+              
+              <h4>Original Clause:</h4>
+              <p>${clause.clause_text}</p>
+              
+              <h4>Risk Explanation:</h4>
+              <p>${clause.explanation}</p>
+              
+              <h4>Suggested Alternative:</h4>
+              <p>${clause.suggested_alternative}</p>
+            </div>
+          `).join('')}
+
+          <div style="margin-top: 36pt; text-align: center; font-size: 10pt; color: #6b7280;">
+            <p>Generated by Contract Clause Checker on ${new Date().toLocaleDateString()}</p>
+          </div>
+        </body>
+      </html>
+    `;
   };
 
   return (
@@ -483,13 +826,23 @@ const Home = () => {
                 ← Analyze New Contract
               </Button>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm">
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={exportToPDF}
+                  disabled={isExporting}
+                >
                   <Download className="h-4 w-4 mr-2" />
-                  Export PDF
+                  {isExporting ? "Exporting..." : "Export PDF"}
                 </Button>
-                <Button variant="outline" size="sm">
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={exportToWord}
+                  disabled={isExporting}
+                >
                   <Download className="h-4 w-4 mr-2" />
-                  Export Word
+                  {isExporting ? "Exporting..." : "Export Word"}
                 </Button>
               </div>
             </div>
